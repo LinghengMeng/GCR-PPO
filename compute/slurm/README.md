@@ -51,6 +51,50 @@ training runs: `isaaclab.sh -i` uninstalled/replaced the container's own bundled
 happened in the sandbox copy - running against the original read-only `.sif` would find the old,
 still-present-there torch and get an inconsistent environment.
 
+**Sandbox lives on `/scratch3`, not `/datastore`**: `/datastore` is NFS-backed and painfully slow
+for Isaac Sim's many-small-file boot (near-zero CPU progress over 10+ min in one attempt); the
+fully-configured sandbox was copied from `/datastore` to `/scratch3/$USER/gcr_ppo/isaac_sim_gcr_sandbox`
+(bulk sequential `cp -r`, NFS-friendly unlike random small-file access, ~4 min for 22GB) and every
+job/smoke-test since references that copy. `/scratch3` is flushed after 14 days - if that happens,
+either re-copy from `/datastore` and reapply the fixes below, or rebuild the sandbox fresh.
+
+## Fixes required beyond the base sandbox setup (found via the smoke-test cycle, 2026-08-13)
+
+All of these are already baked into `train_run.sbatch`'s `apptainer exec` env block - listed here
+for reproducibility if the sandbox needs rebuilding:
+
+- **`git` binary missing** - `rsl_rl.utils.utils` unconditionally does `import git` (GitPython) at
+  module load time, which needs the actual `git` CLI, not present in the minimal container. Fix:
+  `apptainer exec --fakeroot --writable <sandbox> bash -c "apt-get install -y git"` from the
+  **login node** (compute nodes have no internet); `--fakeroot` needed since `apt`/`dpkg` require
+  root. Once installed, still need `export PATH=$PATH:/usr/bin` at runtime since the sandbox's
+  base `$PATH` doesn't include it.
+- **`ModuleNotFoundError: No module named 'pkg_resources'`** - the old pinned `wandb==0.12.16`
+  needs `pkg_resources`, removed from `setuptools>=81` (sandbox had `setuptools-84.0.0`). Fix:
+  `apptainer exec --writable <sandbox> bash -c "pip install 'setuptools<81'"` (resolved to
+  80.10.2) from the login node.
+- **`TypeError: Descriptors cannot be created directly`** - old wandb's generated `_pb2.py` files
+  incompatible with the newer `protobuf` pulled in as an isaaclab dependency. Fix (safer than
+  downgrading protobuf and risking breaking torch/isaaclab):
+  `export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` (pure-Python fallback) at runtime.
+- **`KeyError: 'Wandb username not found'`** - `rsl_rl`'s `WandbSummaryWriter` requires
+  `WANDB_USERNAME` even in offline mode (used only as the `entity=` arg to `wandb.init`, no auth
+  needed offline). Fix: `export WANDB_USERNAME=$USER` at runtime.
+- **`AttributeError: 'NoneType' object has no attribute 'split'`** - `wandb.run.name` is `None` in
+  offline mode with this old wandb version (name generation needs the server, which offline mode
+  skips). Fix: patched in this fork - `rsl_rl/rsl_rl/utils/wandb_utils.py` now guards with
+  `if wandb.run.name is not None:` before the rename.
+- **Own bug, not a container issue**: `aloha_right_arm_cfg.py`'s `_ASSETS_DIR` originally used two
+  `dirname()` calls instead of three, landing one directory level too high and causing
+  `FileNotFoundError` for the robot USD. Fixed in commit `e777d738`.
+
+Confirmed via smoke test (`--num_envs 4 --max_iterations 3`) for **both** conditions
+(`--use_critic_multi` alone and `--use_critic_multi --use_pcgrad`) on 2026-08-13: task loads, the
+multi-head critic builds with the correct 6-head output (matching the 6 reward components), and
+training completes 3 iterations cleanly (`EXIT_CODE=0`), logging all 6 per-term rewards
+(`reaching_object`, `lifting_object`, `object_goal_tracking`, `object_goal_tracking_fine_grained`,
+`action_rate`, `joint_vel`) - same structure as the main HraPPO sweep's task.
+
 ## Usage
 
 ```bash
