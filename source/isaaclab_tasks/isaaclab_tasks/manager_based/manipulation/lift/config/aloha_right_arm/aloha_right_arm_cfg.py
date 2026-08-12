@@ -17,9 +17,14 @@ import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 
-# USD/texture assets copied alongside this task (see ../aloha_mug_assets/), not the shared
-# isaaclab_assets nucleus - this robot/object pair is specific to this experiment.
-_ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "aloha_mug_assets")
+# USD/texture assets copied alongside this task (see ../../aloha_mug_assets/, i.e. lift/aloha_mug_assets/),
+# not the shared isaaclab_assets nucleus - this robot/object pair is specific to this experiment.
+# NOTE: this file lives at lift/config/aloha_right_arm/ - three levels below lift/, so three
+# dirname() calls are needed to reach it. Had only two here originally (landed at lift/config/
+# instead of lift/), causing FileNotFoundError for the robot USD - confirmed via smoke test
+# 2026-08-13 (joint_pos_env_cfg.py's mug asset path, computed differently via "..", ".." segments,
+# was already correct).
+_ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "aloha_mug_assets")
 
 ##
 # Configuration
