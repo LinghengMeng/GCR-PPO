@@ -37,7 +37,7 @@ set -uo pipefail
 : "${SEED:?SEED must be set}"
 
 CODE_DIR="/datastore/${USER}/hra_gcr_code"
-SANDBOX="${CODE_DIR}/isaac_sim_gcr_sandbox"
+SANDBOX="/scratch3/${USER}/gcr_ppo/isaac_sim_gcr_sandbox"
 REPO="${CODE_DIR}/GCR-PPO"
 PYTHONUSERBASE_GCR="${CODE_DIR}/pyuserbase_gcr"
 
@@ -76,8 +76,11 @@ module load apptainer
 apptainer exec --nv --writable "${SANDBOX}" bash -c "
 set -uo pipefail
 export TERM=xterm
+export PATH=\$PATH:/usr/bin
 export PYTHONUSERBASE='${PYTHONUSERBASE_GCR}'
 export WANDB_MODE=offline
+export WANDB_USERNAME='${USER}'
+export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 cd '${SCRATCH_RUN}'
 '${REPO}/_isaac_sim/python.sh' '${REPO}/scripts/reinforcement_learning/rsl_rl/train.py' \
     --task Isaac-Lift-Mug-Aloha-Right-Arm-v0 \

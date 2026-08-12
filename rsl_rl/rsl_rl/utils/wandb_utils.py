@@ -33,8 +33,13 @@ class WandbSummaryWriter(SummaryWriter):
 
         wandb.init(project=project, entity=entity)
 
-        # Change generated name to project-number format
-        wandb.run.name = project + wandb.run.name.split("-")[-1]
+        # Change generated name to project-number format. wandb.run.name is None in offline mode
+        # with this old wandb version (0.12.16) - name generation needs the server, which offline
+        # mode skips - confirmed via smoke test 2026-08-13 (AttributeError: 'NoneType' object has
+        # no attribute 'split'). Skip the rename in that case; offline runs still log fine, just
+        # keep wandb's own on-disk directory name (offline-run-<timestamp>-<id>).
+        if wandb.run.name is not None:
+            wandb.run.name = project + wandb.run.name.split("-")[-1]
 
         self.name_map = {
             "Train/mean_reward/time": "Train/mean_reward_time",
