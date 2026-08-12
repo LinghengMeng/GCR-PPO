@@ -49,10 +49,19 @@ mkdir -p "${SCRATCH_RUN}"
 
 sync_to_datastore() {
     mkdir -p "$(dirname "${DATASTORE_RUN}")"
-    cp -r "${SCRATCH_RUN}" "${DATASTORE_RUN}" 2>/dev/null || true
+    # rsync, not cp -r: cp -r into an already-existing DATASTORE_RUN (i.e. every sync after the
+    # first) nests the copy one level deeper instead of overwriting in place - confirmed via the
+    # parallel men119-isaaclabextensioncsirohri sweep 2026-08-13. rsync -a is idempotent.
+    rsync -a "${SCRATCH_RUN}/" "${DATASTORE_RUN}/" 2>/dev/null || true
 }
 
-( while true; do sleep 1200; sync_to_datastore; done ) &
+# Periodic sync every 5 min (tightened from 20 min 2026-08-13) - the --signal=B:SIGTERM@180 EXIT
+# trap is NOT reliable: confirmed on the parallel men119-isaaclabextensioncsirohri sweep that the
+# trap can simply not fire before the hard time-limit kill, even though SLURM still reports a
+# clean exit. GCR-PPO's checkpoints live ONLY under SCRATCH_RUN (wandb/offline-run-*/files/,
+# unlike the other repo which also writes checkpoints directly to /datastore independently), so
+# for these jobs the periodic sync is the ONLY real safety net - do not rely on the trap.
+( while true; do sleep 300; sync_to_datastore; done ) &
 PERIODIC_SYNC_PID=$!
 trap 'kill "${PERIODIC_SYNC_PID}" 2>/dev/null; echo "Final sync to datastore..."; sync_to_datastore; echo "Done."' EXIT
 
