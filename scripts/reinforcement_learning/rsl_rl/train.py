@@ -9,7 +9,6 @@
 
 import argparse
 import sys
-print(f"DEBUG sys.argv: {sys.argv}", flush=True)
 from unittest import runner
 
 from isaaclab.app import AppLauncher

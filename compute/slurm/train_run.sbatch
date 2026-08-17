@@ -136,8 +136,6 @@ cd '${SCRATCH_RUN}'
     ${RESUME_ARGS[@]} \\
     2>&1 | tee '${SCRATCH_RUN}/train.log'
 INNEREOF
-echo "DEBUG inner script contents:"
-cat "${INNER_SCRIPT}"
 
 apptainer exec --nv --writable "${SANDBOX}" bash "${INNER_SCRIPT}"
 
