@@ -101,6 +101,8 @@ if [ -n "${RESUME_SRC_CHECKPOINT:-}" ]; then
 fi
 
 echo "Run: ${RUN_DIR}  (condition=${CONDITION} seed=${SEED} job=${SLURM_JOB_ID})"
+echo "DEBUG ALG_FLAGS: [${ALG_FLAGS[@]}]  (count: ${#ALG_FLAGS[@]})"
+echo "DEBUG RESUME_ARGS: [${RESUME_ARGS[@]}]  (count: ${#RESUME_ARGS[@]})"
 
 module load apptainer
 
