@@ -31,6 +31,16 @@
 #     this comparison is specifically multi-head-with-vs-without-conflict-resolution, using
 #     GCR-PPO's own code, not a full re-run of every condition)
 #   SEED        integer seed
+# Optional:
+#   RESUME_SRC_CHECKPOINT   absolute path to a model_N.pt from an earlier run to continue training
+#     from (2026-08-18, checking whether GCR-PPO's own curves - still rising at the end of the
+#     first ~22-24k-iteration sweep, unlike the parallel HraPPO sweep which plateaued early - keep
+#     improving with more training). Must follow the standard
+#     .../logs/rsl_rl/<experiment_name>/<run_dir>/model_N.pt layout (GCR-PPO's train.py also saves
+#     a copy under wandb/offline-run-*/files/, but get_checkpoint_path() only looks in the standard
+#     logs/rsl_rl location, so that's the one to point at). Each job runs in a fresh per-job scratch
+#     directory, so the source checkpoint can't be resolved relative to THIS job's own
+#     log_root_path - copied into place under this job's SCRATCH_RUN before training starts.
 set -uo pipefail
 
 : "${CONDITION:?CONDITION must be set (naive_multihead|conflict_resolved)}"
@@ -78,6 +88,18 @@ case "${CONDITION}" in
     ;;
 esac
 
+RESUME_ARGS=()
+if [ -n "${RESUME_SRC_CHECKPOINT:-}" ]; then
+    RESUME_RUN_DIR="$(basename "$(dirname "${RESUME_SRC_CHECKPOINT}")")"
+    RESUME_EXPERIMENT_NAME="$(basename "$(dirname "$(dirname "${RESUME_SRC_CHECKPOINT}")")")"
+    RESUME_CHECKPOINT_FILE="$(basename "${RESUME_SRC_CHECKPOINT}")"
+    RESUME_DEST_DIR="${SCRATCH_RUN}/logs/rsl_rl/${RESUME_EXPERIMENT_NAME}/${RESUME_RUN_DIR}"
+    mkdir -p "${RESUME_DEST_DIR}"
+    cp "${RESUME_SRC_CHECKPOINT}" "${RESUME_DEST_DIR}/"
+    RESUME_ARGS=(--resume --load_run "${RESUME_RUN_DIR}" --checkpoint "${RESUME_CHECKPOINT_FILE}")
+    echo "Resuming from: ${RESUME_SRC_CHECKPOINT} (copied to ${RESUME_DEST_DIR}/${RESUME_CHECKPOINT_FILE})"
+fi
+
 echo "Run: ${RUN_DIR}  (condition=${CONDITION} seed=${SEED} job=${SLURM_JOB_ID})"
 
 module load apptainer
@@ -97,6 +119,7 @@ cd '${SCRATCH_RUN}'
     --seed ${SEED} \
     --headless \
     ${ALG_FLAGS[@]} \
+    ${RESUME_ARGS[@]} \
     2>&1 | tee '${SCRATCH_RUN}/train.log'
 "
 
