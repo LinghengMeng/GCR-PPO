@@ -106,7 +106,19 @@ echo "DEBUG RESUME_ARGS: [${RESUME_ARGS[@]}]  (count: ${#RESUME_ARGS[@]})"
 
 module load apptainer
 
-apptainer exec --nv --writable "${SANDBOX}" bash -c "
+# Write the inner command to a real script file instead of embedding array expansions in a
+# double-quoted `bash -c "..."` argument passed through apptainer exec. Found 2026-08-18: with
+# CONDITION=conflict_resolved (ALG_FLAGS has 2 elements, plus RESUME_ARGS with 4 more), sys.argv
+# inside the container showed the argument list silently truncated right after the first ALG_FLAGS
+# element - --use_pcgrad and the entire RESUME_ARGS were dropped before reaching Python, even
+# though an echo of the same arrays immediately before this block showed them fully correct.
+# naive_multihead (ALG_FLAGS has only 1 element) never hit this, which is why it looked like an
+# isolated pcgrad-specific bug at first. Root mechanism not fully pinned down (suspect something
+# in how apptainer/the container boundary handles a long multi-element single-argument string),
+# but writing to a file and executing that sidesteps it entirely - confirmed the more robust
+# approach after `sys.argv` debugging on the previous (broken) inline version.
+INNER_SCRIPT="${SCRATCH_RUN}/_run_inner.sh"
+cat > "${INNER_SCRIPT}" <<INNEREOF
 set -uo pipefail
 export TERM=xterm
 export PATH=\$PATH:/usr/bin
@@ -115,14 +127,18 @@ export WANDB_MODE=offline
 export WANDB_USERNAME='${USER}'
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 cd '${SCRATCH_RUN}'
-'${REPO}/_isaac_sim/python.sh' '${REPO}/scripts/reinforcement_learning/rsl_rl/train.py' \
-    --task Isaac-Lift-Mug-Aloha-Right-Arm-v0 \
-    --num_envs 200 \
-    --seed ${SEED} \
-    --headless \
-    ${ALG_FLAGS[@]} \
-    ${RESUME_ARGS[@]} \
+'${REPO}/_isaac_sim/python.sh' '${REPO}/scripts/reinforcement_learning/rsl_rl/train.py' \\
+    --task Isaac-Lift-Mug-Aloha-Right-Arm-v0 \\
+    --num_envs 200 \\
+    --seed ${SEED} \\
+    --headless \\
+    ${ALG_FLAGS[@]} \\
+    ${RESUME_ARGS[@]} \\
     2>&1 | tee '${SCRATCH_RUN}/train.log'
-"
+INNEREOF
+echo "DEBUG inner script contents:"
+cat "${INNER_SCRIPT}"
+
+apptainer exec --nv --writable "${SANDBOX}" bash "${INNER_SCRIPT}"
 
 echo "Training command exited (code ${PIPESTATUS[0]}) - EXIT trap will now sync scratch -> datastore."
